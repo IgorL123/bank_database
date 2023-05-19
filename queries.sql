@@ -1,128 +1,104 @@
 
 
 /*
-    Посчитать средний процент на остаток по дебетовой карте для всех счетов.
+    Вывести всех клиентов, имеющих хотя бы один заблокированный счет, и количество заблокированных счетов.
 */
 
-SELECT AVG(percent) AS mean_percent
-FROM card
-WHERE card_type = 'Дебетовая';
+SELECT client.id, client.name, count(ac.id) as blocked_accounts
+FROM client
+    JOIN accountclient a on client.id = a.id_client
+    JOIN account ac on a.id_account = ac.id
+WHERE ac.blocked = true
+GROUP BY client.id
+ORDER BY blocked_accounts DESC;
 
 /*
-    Вывести всех пользователей, имеющих хотя бы один заблокированный счет, и количество заблокированных счетов.
- */
-SELECT users.name, COUNT(a2.number) AS amount
-FROM users
-    JOIN accountusers a on users.id = a.user_id
-    JOIN account a2 on a.account_id = a2.id
-WHERE blocked = True
-GROUP BY users.name
-ORDER BY amount DESC, name;
-
-
-/*
-    Посчитать средний долг по кредитам всех пользовательей.
+    Вывести всех клиентов с максимальным количеством переводов и сумму их переводов.
 */
-SELECT AVG(aad.debt) AS mean_dept
-FROM (
-    SELECT SUM(credit_limit) AS debt
-FROM account
-    JOIN accountusers a on account.id = a.account_id
-GROUP BY user_id
-     ) as aad;
 
-/*
-    Вывести всех пользователей, имеющих на счету больше, чем 1 млн. Отсоритровать по убыванию счета.
-*/
-SELECT users.name, SUM(account.value) AS money
-FROM users
-    JOIN accountusers a on users.id = a.user_id
-    JOIN account on a.account_id = account.id
-WHERE account.value > 1000000
-GROUP BY users.name
-ORDER BY money DESC;
-
-/*
-    Вывести всех пользователей с максимальным количеством переводов и сумму их переводов.
-*/
-SELECT users.name, SUM(value) AS sum
-FROM users
-    JOIN accountusers au ON users.id = au.user_id
-    JOIN transaction tr ON au.account_id = tr.account_id
-GROUP BY users.name
-HAVING COUNT(users.name) = (
-        SELECT COUNT(transaction.value)
-        FROM transaction
-            JOIN account a on transaction.account_id = a.id
-            JOIN accountusers a2 on a.id = a2.account_id
-            JOIN users u on a2.user_id = u.id
-        GROUP BY u.id
-        ORDER BY COUNT(transaction.value) DESC
-        LIMIT 1
-    )
-ORDER BY sum DESC;
-
-/*
-    Найти самую популярную валюту переводов среди пользователей, имеющих кредит.
- */
-
-SELECT currency.name, COUNT(t.id) AS amount_t
-FROM currency
-    JOIN transaction t on currency.id = t.currency_id
-    JOIN account a on t.account_id = a.id
-    JOIN accountusers a2 on a.id = a2.account_id
-WHERE a2.user_id IN (
-        SELECT users.id
-        FROM users
-            JOIN accountusers a on users.id = a.user_id
-            JOIN account a2 on a.account_id = a2.id
-        WHERE credit_limit != 0
-    )
-GROUP BY currency.name
-ORDER BY amount_t DESC
+SELECT client.id, client.name, count(operation.id) as count_operation,
+       round(sum(operation.amount * currency.exchange2_rub)) as sum_operation
+FROM operation
+    JOIN account a on operation.id_account = a.id
+    JOIN accountclient ac on a.id = ac.id_account
+    JOIN currency on operation.id_currency = currency.id
+    JOIN client on ac.id_client = client.id
+GROUP BY client.id
+ORDER BY count_operation DESC
 LIMIT 1;
 
 /*
     Найти валюты с наибольшей суммой операций за сегодня, выраженной в рублях.
- */
+*/
 
-
-SELECT name, SUM(value * exchange_ration2rub) AS max_sum_rub
-FROM transaction
-    JOIN currency c on transaction.currency_id = c.id
-WHERE date = CURRENT_DATE
-GROUP BY name
-HAVING SUM(value * exchange_ration2rub) = (
-    SELECT SUM(value * exchange_ration2rub)
-    FROM transaction
-        JOIN currency c2 on transaction.currency_id = c2.id
-    WHERE date = CURRENT_DATE
-    GROUP BY currency_id
-    ORDER BY SUM(value * exchange_ration2rub) DESC
-    LIMIT 1 );
+SELECT currency.id, currency.name, round(sum(o.amount * currency.exchange2_rub)) as sum_operations
+FROM currency
+    JOIN operation o on currency.id = o.id_currency
+GROUP BY currency.id
+ORDER BY sum_operations;
 
 /*
-    Вывести имена пользователей с наибольшим совокупным состоянием.
- */
-SELECT users.name, SUM(value) AS sum
-FROM users
-    JOIN accountusers a on users.id = a.user_id
-    JOIN account a2 on a.account_id = a2.id
-GROUP BY users.name
-HAVING SUM(value) = (
-    SELECT SUM(value)
-        FROM users
-    JOIN accountusers a on users.id = a.user_id
-    JOIN account a2 on a.account_id = a2.id
-    GROUP BY users.name
-    ORDER BY SUM(value) DESC
-    LIMIT 1 );
+    Вывести все транзакции с суммой меньшей 1000 руб за вчера.
+*/
 
+SELECT c.name, round(amount * c.exchange2_rub) AS sum
+FROM operation
+         JOIN currency c on operation.id_currency = c.id
+WHERE amount * c.exchange2_rub < 1000 AND date = MAKE_DATE(2023, 5, 16);
 
 /*
-    Вывести все транзакции с суммой меньшей 1000 руб за вчера
- */
+    Вывести имена пользователей с наибольшим совокупным состоянием,
+    то есть суммой всех средств на всех счетах, посчитать в рублях.
+*/
 
-SELECT *, value * c.exchange_ration2rub AS rub_value FROM transaction
-         JOIN currency c on transaction.currency_id = c.id
-    WHERE value * c.exchange_ration2rub < 1000 AND date=MAKE_DATE(2022, 12, 18)
+SELECT client.id, client.name, round(sum(ac.balance * c.exchange2_rub)) as balance_in_rub
+FROM client
+    JOIN accountclient a on client.id = a.id_client
+    JOIN account ac on a.id_account = ac.id
+    JOIN currency c on c.id = ac.id_currency
+GROUP BY client.id
+ORDER BY balance_in_rub DESC;
+/*
+    Посчитать среднюю сумму операций в различных городах.
+*/
+
+SELECT substr(place, 0, position(',' in place)), round(avg(amount)) as avg_operations
+FROM operation
+GROUP BY substr(place, 0, position(',' in place))
+ORDER BY avg_operations DESC;
+
+/*
+    Подсчитать для каждого дня в году среднюю сумму операций (покупок) в рублях.
+*/
+
+SELECT date, round(avg(amount * c.exchange2_rub)) as sum
+FROM operation
+    JOIN currency c on operation.id_currency = c.id
+GROUP BY date
+ORDER BY sum DESC;
+
+/*
+    Вывести средний расход за месяц для клиентов банка, имеющих более 3 вкладов .
+*/
+
+SELECT client.id, client.name, round(avg(o.amount)) as mean_spending
+FROM client
+    JOIN accountclient a on client.id = a.id_client
+    JOIN account a2 on a.id_account = a2.id
+    JOIN operation o on a2.id = o.id_account
+    JOIN deposit c on a2.id = c.id_account
+WHERE o.amount < 0 and o.date > make_date(2023, 04, 1)
+GROUP BY client.id
+HAVING count(c.id) > 3
+ORDER BY mean_spending ASC;
+
+/*
+    Вывести таблицу ранжированных клиентов банка по кредитной истории: чем больше закрыто
+    кредитов в срок и чем больше их сумма, тем выше ранг.
+ */
+SELECT client.id, client.name, rank() OVER (ORDER BY sum(c.sum) DESC) as credit_rank
+ FROM client
+    JOIN accountclient a on client.id = a.id_client
+    JOIN account a2 on a.id_account = a2.id
+    JOIN credit c on a2.id = c.id_account
+ GROUP BY client.id;
