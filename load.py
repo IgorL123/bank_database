@@ -16,7 +16,6 @@ def load():
     )
     cur = conn.cursor()
 
-    # DO NOT WORKING DUE TO FOREIGN KEYS AND __enter__
     # files = os.listdir(os.getcwd() + '/data_csv')
     files = ['client.csv', 'currency.csv', 'account.csv', 'credit.csv', 'deposit.csv',
              'card.csv', 'accountclient.csv', 'accountcard.csv', 'currencycard.csv']
